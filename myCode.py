@@ -1,13 +1,60 @@
 import os
+import time
 import numpy as np
 import pandas as pd
 import lightgbm as lgb
 from xgboost import XGBRanker
-from toy_example import load_from_csv, write_submission
 
 TRAIN_INPUT = "code/input_train_set.csv"
 TRAIN_OUTPUT = "code/output_train_set.csv"
 TEST_INPUT = "code/input_test_set.csv"
+
+def load_from_csv(path, delimiter=','):
+    return pd.read_csv(path, delimiter=delimiter, index_col=0)
+
+def write_submission(predictions=None, probas=None, estimated_score=0, file_name="submission", date=True, indexes=None):
+    if date:
+        file_name = '{}_{}'.format(file_name, time.strftime('%d-%m-%Y_%Hh%M'))
+
+    file_name = '{}.txt'.format(file_name)
+
+    if predictions is None and probas is None:
+        raise ValueError('No predictions or probabilities provided.')
+
+    n_samples = 3000
+    if indexes is None:
+        indexes = np.arange(n_samples)
+
+    if probas is None:
+        probas = np.zeros((n_samples,22))
+        for i in range(n_samples):
+            probas[i, predictions[i]-1] = 1
+
+    if predictions is None:
+        predictions = np.zeros((n_samples, ))
+        for i in range(n_samples):
+            mask = probas[i] == np.max(probas[i])
+            selected_players = np.arange(1,23)[mask]
+            predictions[i] = int(selected_players[0])
+
+    with open(file_name, 'w') as handle:
+        header = '"Id","Predicted",'
+        for j in range(1,23):
+            header = header + '"P_{:0.0f}",'.format(j)
+        handle.write(header[:-1]+"\n")
+        first_line = '"Estimation",{},'.format(estimated_score)
+        for j in range(1,23):
+            first_line = first_line + '0,'
+        handle.write(first_line[:-1]+"\n")
+        for i in range(n_samples):
+            line = "{},{:0.0f},".format(indexes[i], predictions[i])
+            pj = probas[i, :]
+            for j in range(22):
+                line = line + '{},'.format(pj[j])
+            handle.write(line[:-1]+"\n")
+
+    return file_name
+
 
 def softmax_with_temperature(x, temp=1.0):
     e_x = np.exp((x - np.max(x, axis=1, keepdims=True)) / temp)
